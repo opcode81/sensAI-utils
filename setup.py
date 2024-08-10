@@ -52,7 +52,7 @@ extras_require["full"] = functools.reduce(lambda x, y: x + y, list(extras_requir
 
 
 setup(
-    name='sensai_utils',
+    name='sensai-utils',
     package_dir={"": "src"},
     license="MIT",
     url="https://github.com/opcode81/sensAI-utils",
