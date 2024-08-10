@@ -5,7 +5,7 @@ from glob import glob
 
 from setuptools import setup, find_namespace_packages
 
-# list of dependencies where ==/~= dependencies (used in requirements.txt and for the extras in requirements_*.txt) are relaxed:
+# list of dependencies where ==/~= dependencies (used in requirements.txt) are relaxed:
 # any later version is OK (as long as we are not aware of a concrete limitation - and once we are, we shall define
 # the respective upper bound below)
 DEPS_VERSION_LOWER_BOUND = [
@@ -42,15 +42,6 @@ def relaxed_requirements_from_file(path):
         return relaxed_requirements(f.readlines())
 
 
-# create extras requirements from requirements_*.txt, and add "full" extras which combines them all
-extras_require = {}
-for extras_requirements_file in glob("requirements_*.txt"):
-    m = re.match(r"requirements_(\w+).txt", extras_requirements_file)
-    extra_name = m.group(1)
-    extras_require[extra_name] = relaxed_requirements_from_file(extras_requirements_file)
-extras_require["full"] = functools.reduce(lambda x, y: x + y, list(extras_require.values()))
-
-
 setup(
     name='sensai-utils',
     package_dir={"": "src"},
@@ -63,7 +54,6 @@ setup(
     install_requires=relaxed_requirements_from_file("requirements.txt"),
     dependency_links=[],
     setup_requires=["wheel"],
-    extras_require=extras_require,
     author='appliedAI Institute gGmbh & jambit GmbH',
     classifiers=[
         "Programming Language :: Python :: 3.7",
