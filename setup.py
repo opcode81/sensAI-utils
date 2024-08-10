@@ -49,7 +49,7 @@ setup(
     url="https://github.com/opcode81/sensAI-utils",
     packages=find_namespace_packages(where="src"),
     include_package_data=True,
-    version='1.2.0',
+    version='1.2.1',
     description='Utilities from sensAI, the Python library for sensible AI',
     install_requires=relaxed_requirements_from_file("requirements.txt"),
     dependency_links=[],
