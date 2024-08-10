@@ -16,3 +16,5 @@ dependencies:
   - pytest
   # for release process
   - bump2version
+  - pip:
+      - -r requirements.txt
