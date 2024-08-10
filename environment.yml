@@ -1,0 +1,18 @@
+# environment definition for development
+# NOTE: versions are mostly unpinned, because this facilitates conda dependency resolution. Also,
+# sensAI should be compatible to all (newer) versions of the dependencies. If it isn't, we need to specify 
+# an upper version bound in setup.py (where it matters the most) as well as here.
+# Compatibility with old (pinned) versions and the latest versions is tested in the tox build.
+name: sensai_utils
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  # basics
+  # we use Python 3.8 because it has better conda dependency support; the code must still be compatible to 3.7 (which is tested by the github build)
+  - python=3.8
+  - pip
+  # for tests
+  - pytest
+  # for release process
+  - bump2version
