@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 log = getLogger(__name__)
 
 LOG_DEFAULT_FORMAT = '%(levelname)-5s %(asctime)-15s %(name)s:%(funcName)s:%(lineno)d - %(message)s'
+LOG_FILE_DEFAULT_ENCODING = "utf-8"
 T = TypeVar("T")
 THandler = TypeVar("THandler", bound=Handler)
 
@@ -98,7 +99,12 @@ def configure(format=LOG_DEFAULT_FORMAT, level=lg.DEBUG, stream=sys.stdout):
 
 
 # noinspection PyShadowingBuiltins
-def run_main(main_fn: Callable[..., T], format=LOG_DEFAULT_FORMAT, level=lg.DEBUG) -> T:
+def run_main(main_fn: Callable[..., T],
+        format=LOG_DEFAULT_FORMAT,
+        level=lg.DEBUG,
+        logfile: Optional[str] = None,
+        append: bool = True,
+        stream=sys.stdout) -> T:
     """
     Configures logging with the given parameters, ensuring that any exceptions that occur during
     the execution of the given function are logged.
@@ -107,9 +113,15 @@ def run_main(main_fn: Callable[..., T], format=LOG_DEFAULT_FORMAT, level=lg.DEBU
     :param main_fn: the function to be executed
     :param format: the log message format
     :param level: the minimum log level
+    :param logfile: the path of a file to write logs to (in addition to console outputs);
+        directories will be created as needed
+    :param append: whether to append to the log file if it already exists
+    :param stream: the output stream for console log messages
     :return: the result of `main_fn`
     """
-    configure(format=format, level=level)
+    configure(format=format, level=level, stream=stream)
+    if logfile is not None:
+        add_file_logger(logfile, append=append)
     log.info("Starting")
     try:
         result = main_fn()
@@ -120,7 +132,12 @@ def run_main(main_fn: Callable[..., T], format=LOG_DEFAULT_FORMAT, level=lg.DEBU
 
 
 # noinspection PyShadowingBuiltins
-def run_cli(main_fn: Callable[..., T], format: str = LOG_DEFAULT_FORMAT, level: int = lg.DEBUG) -> Optional[T]:
+def run_cli(main_fn: Callable[..., T],
+        format: str = LOG_DEFAULT_FORMAT,
+        level: int = lg.DEBUG,
+        logfile: Optional[str] = None,
+        append: bool = True,
+        stream = sys.stdout) -> Optional[T]:
     """
     Configures logging with the given parameters and runs the given main function as a
     CLI using `jsonargparse` (which is configured to also parse attribute docstrings, such
@@ -132,12 +149,14 @@ def run_cli(main_fn: Callable[..., T], format: str = LOG_DEFAULT_FORMAT, level: 
     :param main_fn: the function to be executed
     :param format: the log message format
     :param level: the minimum log level
+    :param logfile: path of a file to write logs to (in addition to console outputs);
+        directories will be created as needed
     :return: the result of `main_fn`
     """
     from jsonargparse import set_docstring_parse_options, CLI
 
     set_docstring_parse_options(attribute_docstrings=True)
-    return run_main(lambda: CLI(main_fn), format=format, level=level)
+    return run_main(lambda: CLI(main_fn), format=format, level=level, logfile=logfile, append=append, stream=stream)
 
 
 def datetime_tag() -> str:
@@ -156,11 +175,23 @@ def _at_exit_report_file_logger():
         print(f"A log file was saved to {path}")
 
 
-def add_file_logger(path, append=True, register_atexit=True) -> FileHandler:
+def add_file_logger(path, append=True, register_atexit=True, encoding=LOG_FILE_DEFAULT_ENCODING) -> FileHandler:
+    """
+    Adds a file logger which logs to the given path.
+
+    :param path: the path to the log file; directories will be created as needed
+    :param append: whether to append in case the file already exists
+    :param register_atexit: whether to register an atexit handler which reports the path to the log file upon program termination
+    :param encoding: the encoding to use for the log file
+    :return: the created file handler
+    """
     global _isAtExitReportFileLoggerRegistered
     log.info(f"Logging to {path} ...")
+    dirname = os.path.dirname(path)
+    if dirname and not os.path.exists(dirname):
+        os.makedirs(dirname)
     mode = "a" if append else "w"
-    handler = FileHandler(path, mode=mode)
+    handler = FileHandler(path, mode=mode, encoding=encoding)
     handler.setFormatter(Formatter(_logFormat))
     Logger.root.addHandler(handler)
     _fileLoggerPaths.append(path)
@@ -353,14 +384,19 @@ class LoggerContext(Generic[THandler], ABC):
 
     def __init__(self, enabled=True):
         """
-        :param enabled: whether to actually perform any logging.
-            This switch allows the with statement to be applied regardless of whether logging shall be enabled.
+        :param enabled: whether to actually enable the context, applying the new log handler.
+            This switch allows the with statement to be applied regardless of whether the context shall be enabled.
         """
         self.enabled = enabled
         self._log_handler = None
 
     @abstractmethod
     def _create_log_handler(self) -> THandler:
+        """
+        Creates and registers/enables the log handler to be used within the context.
+
+        :return: the handler
+        """
         pass
 
     def __enter__(self) -> Optional[THandler]:
@@ -369,7 +405,9 @@ class LoggerContext(Generic[THandler], ABC):
         return self._log_handler
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self._log_handler is not None:
+        if self.enabled:
+            if exc_type is not None:
+                log.error(f"Exception within {self.__class__.__name__}", exc_info=exc_value)
             remove_log_handler(self._log_handler)
 
 
@@ -378,19 +416,21 @@ class FileLoggerContext(LoggerContext[FileHandler]):
     A context handler to be used in conjunction with Python's `with` statement which enables file-based logging.
     """
 
-    def __init__(self, path: str, append=True, enabled=True):
+    def __init__(self, path: str, append=True, enabled=True, encoding=LOG_FILE_DEFAULT_ENCODING):
         """
-        :param path: the path to the log file
+        :param path: the path to the log file; directories will be created as needed
         :param append: whether to append in case the file already exists; if False, always create a new file.
         :param enabled: whether to actually perform any logging.
             This switch allows the with statement to be applied regardless of whether logging shall be enabled.
+        :param encoding: the encoding to use for the log file
         """
         self.path = path
         self.append = append
+        self.encoding = encoding
         super().__init__(enabled=enabled)
 
     def _create_log_handler(self) -> FileHandler:
-        return add_file_logger(self.path, append=self.append, register_atexit=False)
+        return add_file_logger(self.path, append=self.append, register_atexit=False, encoding=self.encoding)
 
 
 class MemoryLoggerContext(LoggerContext[MemoryStreamHandler]):
